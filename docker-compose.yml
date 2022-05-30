@@ -2,15 +2,34 @@ version: '3.7'
 
 networks:
   docker_private:
-    name: docker_private
+    name: docker_private_${NETWORK_NAME}
     driver: bridge
     ipam:
       driver: default
       config:
-      - subnet: ${SUBNET}
-        gateway: ${GATEWAY}
+        - subnet: ${SUBNET}
+          gateway: ${GATEWAY}
+
+volumes:
+  newuvda-db-data:
+    driver: local
 
 services:
+
+  mariadb-server:
+    image: mariadb
+    container_name: mariadb-${MARIA_CONTAINER_NAME}
+    restart: unless-stopped
+    networks:
+      - docker_private
+    volumes:
+      - newuvda-db-data:/var/lib/mysql/
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
 
   php-fpm:
     image: 271217/felix-php-fpm:7.4
@@ -20,13 +39,14 @@ services:
     dns: ${DNS}
     networks:
       - docker_private
+    links:
+      - mariadb-server
     volumes:
       - '../:/var/www'
       - ./php/php-fpm.conf:/usr/local/etc/php-fpm.conf
       - ./php/php.ini:/usr/local/etc/php/php.ini
     labels:
       com.example.description: "PHP fpm server"
-      
 
   nginx-balancer:
     image: 'nginx:1.21.6-alpine'
@@ -35,6 +55,8 @@ services:
     dns: ${DNS}
     networks:
       - docker_private
+    links:
+      - mariadb-server
     ports:
       - '80:80'
       - '443:443'
