@@ -1,0 +1,70 @@
+version: '3.7'
+
+networks:
+  docker_private:
+    name: docker_private_${NETWORK_NAME}
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${SUBNET}
+          gateway: ${GATEWAY}
+
+volumes:
+  newuvda-db-data:
+    driver: local
+
+services:
+
+  mariadb-server:
+    image: mariadb
+    container_name: mariadb-${MARIA_CONTAINER_NAME}
+    restart: unless-stopped
+    networks:
+      - docker_private
+    volumes:
+      - newuvda-db-data:/var/lib/mysql/
+    ports:
+      - 3306:3306
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+
+  php-fpm:
+    image: 271217/felix-php-fpm:7.4
+    container_name: php-${PHP_CONTAINER_NAME}
+    restart: unless-stopped
+    working_dir: /var/www/
+    dns: ${DNS}
+    networks:
+      - docker_private
+    links:
+      - mariadb-server
+    volumes:
+      - '../:/var/www'
+      - ./php/php-fpm.conf:/usr/local/etc/php-fpm.conf
+      - ./php/php.ini:/usr/local/etc/php/php.ini
+    labels:
+      com.example.description: "PHP fpm server"
+
+  nginx-balancer:
+    image: 'nginx:1.21.6-alpine'
+    container_name: nginx-${NGINX_CONTAINER_NAME}
+    restart: unless-stopped
+    dns: ${DNS}
+    networks:
+      - docker_private
+    links:
+      - mariadb-server
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - '../:/var/www'
+      - './nginx/default.conf:/etc/nginx/conf.d/default.conf'
+      - './nginx/snipets/:/etc/nginx/conf.d/snipets/'
+      - './nginx/nginx.conf:/etc/nginx/nginx.conf'
+      - './logs/nginx:/var/log/nginx'
+    labels:
+      com.example.description: "Nginx Web server to balance PHP and static content"
