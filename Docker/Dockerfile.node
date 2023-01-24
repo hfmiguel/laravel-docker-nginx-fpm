@@ -1,0 +1,44 @@
+FROM node:16
+
+LABEL organization="FX DEV"
+LABEL maintainer="Henrique Felix"
+LABEL version="1.0"
+
+# defaults to production, compose overrides this to development on build and run
+ARG NODE_ENV=development
+
+ENV NODE_ENV $NODE_ENV
+
+# RUN export NODE_ENV=$NODE_ENV
+
+# install global packages
+ENV NPM_CONFIG_PREFIX=/home/node/.npm-global
+
+ENV PATH /home/node/.npm-global/bin:$PATH
+
+RUN echo "fs.inotify.max_user_instances=524288" >> /etc/sysctl.conf
+RUN echo "fs.inotify.max_user_watches=524288" >> /etc/sysctl.conf
+RUN echo "fs.inotify.max_queued_events=524288" >> /etc/sysctl.conf
+
+RUN apt-get -qq update && apt-get -qq -y install bzip2
+
+RUN npm i --unsafe-perm -g npm@latest
+RUN npm install --global yarn
+RUN yarn add --dev typescript
+
+RUN npm cache verify
+RUN npm cache clean --force
+
+RUN ssh-keygen -A
+
+WORKDIR /opt
+
+RUN chown -R node:node '/home/node'
+RUN chown -R node:node '/opt'
+RUN chown node:node -R /opt
+
+USER root
+
+CMD ["node"]
+
+ENTRYPOINT ["tail", "-f", "/dev/null"]

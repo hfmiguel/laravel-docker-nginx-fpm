@@ -1,2 +1,8 @@
 .env
 logs/*
+
+
+Docker/Logs/*
+Docker/ssl/*
+App/*
+App/
