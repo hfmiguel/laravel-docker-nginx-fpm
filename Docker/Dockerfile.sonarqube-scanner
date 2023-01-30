@@ -1,0 +1,14 @@
+FROM sonarsource/sonar-scanner-cli:latest
+
+ARG SONAR_HOST_URL $SONAR_HOST_URL
+ARG SONAR_LOGIN $SONAR_LOGIN
+ARG SONAR_PROJECT_KEY $SONAR_PROJECT_KEY
+
+ENV SONAR_HOST_URL=${SONAR_HOST_URL}
+ENV SONAR_URL=${SONAR_HOST_URL}
+ENV SONAR_LOGIN=${SONAR_LOGIN}
+
+ENV SONAR_PROJECT_KEY=${SONAR_PROJECT_KEY}
+# ENV SONAR_SCANNER_OPTS="-Dsonar.projectKey=${SONAR_PROJECT_KEY}"
+
+CMD [ "-Dsonar.projectKey=${SONAR_PROJECT_KEY}", "-Dsonar.sources=.", "-Dsonar.host.url=${SONAR_HOST_URL}", "-Dsonar.login=${SONAR_LOGIN}", "-Dsonar.sonar.projectName=${SONAR_PROJECT_KEY}", "-Dsonar.sonar.sourceEncoding=UTF-8" , "-Dsonar.sonar.projectVersion=1.0"]

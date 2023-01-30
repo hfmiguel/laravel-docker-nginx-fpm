@@ -1,0 +1,17 @@
+FROM mariadb:latest
+
+LABEL version="1.0"
+LABEL description="MariaDB Server"
+LABEL maintainer="Henrique Felix <hfelixmiguell@gmail.com>"
+
+ARG MARIADB_USER=default_user
+ARG MARIADB_PASSWORD=default_password
+ARG MARIADB_ROOT_PASSWORD=default_root_password
+ARG MARIADB_DATABASE=default_database
+
+ENV MARIADB_USER $MARIADB_USER
+ENV MARIADB_PASSWORD $MARIADB_PASSWORD
+ENV MARIADB_ROOT_PASSWORD $MARIADB_ROOT_PASSWORD
+ENV MARIADB_DATABASE $MARIADB_DATABASE
+
+# HEALTHCHECK --interval=10s --timeout=30s --retries=3 CMD [ "mysqladmin ping -u ${MARIADB_USER} -P 3306 -p${MARIADB_ROOT_PASSWORD} | grep 'mysqld is alive' || exit 1" ]

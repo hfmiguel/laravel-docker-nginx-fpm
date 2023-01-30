@@ -13,6 +13,22 @@ networks:
 volumes:
   mariadb-volume:
     driver: local
+  redis-cache:
+    driver: local
+  redis-queue:
+    driver: local
+  sonarqube:
+    driver: local
+  sonarqube-scanner:
+    driver: local
+  sonarqube-extensions:
+    driver: local
+  sonarqube-logs:
+    driver: local
+  postgresql:
+    driver: local
+  postgresql_data:
+    driver: local
 
 services:
 
@@ -23,7 +39,7 @@ services:
       args:
         DOMAIN: ${PROJECT_DOMAIN}
     container_name: nginx-${NGINX_CONTAINER_NAME}
-    restart: unless-stopped
+    restart: always
     dns: ${DNS}
     environment:
       NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
@@ -34,9 +50,6 @@ services:
     networks:
       docker_private:
         ipv4_address: ${IP_PREFIX}.10
-    links:
-      - mariadb-server
-      - php-fpm
     ports:
       - '80:80'
       - '443:443'
@@ -49,27 +62,46 @@ services:
       - ./Docker/Logs/nginx:/var/log/nginx
       - ./Docker/ssl/:/etc/certbot/:ro
       # - ./Docker/ssl/conf/:/etc/nginx/ssl/:ro
+    depends_on:
+      - php-fpm
+    links:
+      - php-fpm
+    healthcheck:
+      test: "curl --fail http://localhost || exit 1"
+      interval: 30s
+      timeout: 5s
+      retries: 5
     labels:
       com.example.description: "Nginx Web server to balance PHP and static content"
 
   mariadb-server:
-    image: mariadb
+    image: mariadb:latest
+    # build:
+    #   context: .
+    #   dockerfile: Docker/Dockerfile.mariadb
+    environment:
+      MARIADB_USER: ${MARIADB_USER}
+      MARIADB_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${MARIADB_DATABASE}
     container_name: mariadb-${MARIA_CONTAINER_NAME}
-    restart: unless-stopped
+    restart: always
     dns: ${DNS}
     networks:
       docker_private:
         ipv4_address: ${IP_PREFIX}.11
     ports:
-      - 3380:3306
+      - 3306
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "mysqladmin ping -u ${MARIADB_USER} -P 3306 -p${MARIADB_ROOT_PASSWORD} | grep 'mysqld is alive' || exit 1"
+        ]
+      interval: 10s
+      retries: 15
     volumes:
       - mariadb-volume:/var/lib/mysql/
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MARIADB_USER: ${MARIADB_USER}
-      MARIADB_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MARIADB_DATABASE: ${MARIADB_DATABASE}
-      MYSQL_DATABASE: ${MARIADB_DATABASE}
     labels:
       com.example.description: "Database container"
 
@@ -90,7 +122,13 @@ services:
   php-fpm:
     # container_name: php-${PHP_CONTAINER_NAME}
     deploy:
+      mode: replicated
       replicas: 3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
     build:
       context: .
       dockerfile: Docker/Dockerfile.php
@@ -100,7 +138,7 @@ services:
         USER_NAME: ${USER}
     user: $UID:$GID
     tty: true
-    restart: unless-stopped
+    restart: always
     working_dir: /var/www/
     dns: ${DNS}
     ports:
@@ -109,12 +147,72 @@ services:
       - docker_private
     links:
       - mariadb-server
+      - redis-cache
+      - redis-queue
+    depends_on:
+      mariadb-server:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
     volumes:
       - ./App:/var/www
       - ./Docker/php/php-fpm.conf:/usr/local/etc/php-fpm.conf
       - ./Docker/php/php.ini:/usr/local/etc/php/php.ini
+    healthcheck:
+      test: "curl --fail nginx-balancer/fpm-ping || exit 1"
+      interval: 5s
+      timeout: 1s
+      retries: 3
     labels:
       com.example.description: "PHP fpm server"
+
+  redis-cache:
+    container_name: redis-cache
+    image: redis:6.2-alpine
+    restart: always
+    command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
+    ports:
+      - '6379'
+    dns: ${DNS}
+    networks:
+      docker_private:
+        ipv4_address: ${IP_PREFIX}.13
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli -a '${REDIS_PASSWORD}' ping | grep PONG"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-cache:/data
+
+  redis-queue:
+    container_name: redis-queue
+    image: redis:6.2-alpine
+    restart: always
+    command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
+    ports:
+      - "6379"
+    dns: ${DNS}
+    networks:
+      docker_private:
+        ipv4_address: ${IP_PREFIX}.14
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "redis-cli -a '${REDIS_PASSWORD}' ping | grep PONG"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - redis-queue:/data
 
   certbot:
     image: certbot/certbot:latest
@@ -123,3 +221,22 @@ services:
       - ./Docker/ssl/conf/:/etc/letsencrypt/:rw
     labels:
       com.example.description: "Generate a SSL cert for your domain"
+
+  autoheal:
+    image: willfarrell/autoheal:latest
+    tty: true
+    container_name: autoheal
+    restart: always
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=all
+      - AUTOHEAL_INTERVAL=5 # check every 5 seconds
+      - AUTOHEAL_START_PERIOD=30 # wait 0 seconds before first health check
+      - AUTOHEAL_DEFAULT_STOP_TIMEOUT=10 # Docker waits max 10 seconds (the Docker default) for a container to stop before killing during restarts (container overridable via label, see below)
+      - DOCKER_SOCK=/var/run/docker.sock # Unix socket for curl requests to Docker API
+      - CURL_TIMEOUT=30 # --max-time seconds for curl requests to Docker API
+    networks:
+      - docker_private
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    labels:
+      com.example.description: "Auto restart unhealthy containers"
