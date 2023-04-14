@@ -1,0 +1,44 @@
+ARG PHPVERSION=8.1.16-fpm
+
+FROM php:${PHPVERSION}
+
+LABEL organization="FX DEV"
+LABEL maintainer="Henrique Felix"
+LABEL version="1.0"
+
+RUN apt-get update && apt-get install -y libpng-dev \
+    libwebp-dev \
+    libjpeg62-turbo-dev \
+    libxpm-dev \
+    libfreetype6-dev \
+    libbz2-dev \
+    libonig-dev \
+    curl \
+    libxml2-dev \
+    libzip-dev
+
+RUN docker-php-ext-configure gd --with-freetype --with-webp --with-jpeg && \
+    docker-php-ext-install gd bz2 zip mbstring exif opcache && \
+    docker-php-ext-enable sodium
+
+ARG USERUID=www-data
+ARG USERGID=www-data
+ARG USERNAME=www-data
+
+ENV USERUID $USERUID
+ENV USERGID $USERGID
+ENV USERNAME $USERNAME
+
+# Create the user
+RUN groupadd -g $USERGID $USERNAME \
+    && useradd --uid $USERUID --gid $USERGID -m $USERNAME \
+    && chown -R $USERUID:$USERGID /home/$USERNAME \
+    && chown -R $USERUID:$USERGID /usr/local \
+    && chown -R $USERUID:$USERGID /var/log \
+    && chown -R $USERUID:$USERGID /var/www/
+
+RUN curl https://curl.se/ca/cacert.pem --output /etc/ssl/cacert.pem
+
+RUN curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+
+USER $USERNAME

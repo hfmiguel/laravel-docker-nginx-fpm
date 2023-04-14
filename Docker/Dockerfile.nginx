@@ -7,7 +7,6 @@ RUN mkdir /etc/nginx/ssl
 RUN mkdir /etc/nginx/ssl/live
 RUN mkdir /etc/nginx/ssl/live/$DOMAIN
 
-
 RUN openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes -subj "/CN=$DOMAIN/C=PT/L=Faro" \
--keyout /etc/nginx/ssl/live/$DOMAIN/privkey.pem \
--out /etc/nginx/ssl/live/$DOMAIN/fullchain.pem
+  -keyout /etc/nginx/ssl/live/$DOMAIN/privkey.pem \
+  -out /etc/nginx/ssl/live/$DOMAIN/fullchain.pem

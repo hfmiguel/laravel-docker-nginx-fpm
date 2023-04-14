@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 printf 'Exporting UID and GID to use in the container\n'
 
 export UID=$(id -u)
@@ -14,7 +13,7 @@ printf 'Do you want to erase the containers volume ? [y/n]'
 read answer
 
 if [ "$answer" != "${answer#[Yy]}" ] ;then
-    docker compose down -v
+    docker compose down -v --remove-orphans
 else
     docker compose stop
 fi

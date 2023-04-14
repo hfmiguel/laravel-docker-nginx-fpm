@@ -38,7 +38,7 @@ services:
       dockerfile: Docker/Dockerfile.nginx
       args:
         DOMAIN: ${PROJECT_DOMAIN}
-    container_name: nginx-${NGINX_CONTAINER_NAME}
+    container_name: nginx-${CONTAINER_PREFIX_NAME}
     restart: always
     dns: ${DNS}
     environment:
@@ -67,7 +67,7 @@ services:
     links:
       - php-fpm
     healthcheck:
-      test: "curl --fail http://localhost || exit 1"
+      test: "curl --fail http://${PROJECT_DOMAIN} || exit 1"
       interval: 30s
       timeout: 5s
       retries: 5
@@ -76,15 +76,12 @@ services:
 
   mariadb-server:
     image: mariadb:latest
-    # build:
-    #   context: .
-    #   dockerfile: Docker/Dockerfile.mariadb
     environment:
       MARIADB_USER: ${MARIADB_USER}
       MARIADB_PASSWORD: ${MARIADB_ROOT_PASSWORD}
       MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD}
       MARIADB_DATABASE: ${MARIADB_DATABASE}
-    container_name: mariadb-${MARIA_CONTAINER_NAME}
+    container_name: mariadb-${CONTAINER_PREFIX_NAME}
     restart: always
     dns: ${DNS}
     networks:
@@ -106,21 +103,26 @@ services:
       com.example.description: "Database container"
 
   node-js:
-    container_name: node-${NODE_CONTAINER_NAME}
+    container_name: node-${CONTAINER_PREFIX_NAME}
     build:
       context: .
       dockerfile: Docker/Dockerfile.node
       args:
-        - NODE_ENV=development
+        NODE_ENV: development
+        NODEVERSION: 16
+        USERUID: ${UID}
+        USERGID: ${GID}
+        USERNAME: ${USER}
+    user: $UID:$GID
+    working_dir: /opt
     volumes:
-      - './App:/opt'
+      - './${PROJECT_FOLDER}:/opt'
     dns: ${DNS}
     networks:
       docker_private:
         ipv4_address: ${IP_PREFIX}.12
 
   php-fpm:
-    # container_name: php-${PHP_CONTAINER_NAME}
     deploy:
       mode: replicated
       replicas: 3
@@ -133,16 +135,14 @@ services:
       context: .
       dockerfile: Docker/Dockerfile.php
       args:
-        USER_UID: ${UID}
-        USER_GID: ${GID}
-        USER_NAME: ${USER}
+        PHPVERSION: ${PHPVERSION}
+        USERUID: ${UID}
+        USERGID: ${GID}
+        USERNAME: ${USER}
     user: $UID:$GID
     tty: true
     restart: always
     working_dir: /var/www/
-    dns: ${DNS}
-    ports:
-      - "9000"
     networks:
       - docker_private
     links:
@@ -157,9 +157,7 @@ services:
       redis-queue:
         condition: service_healthy
     volumes:
-      - ./App:/var/www
-      - ./Docker/php/php-fpm.conf:/usr/local/etc/php-fpm.conf
-      - ./Docker/php/php.ini:/usr/local/etc/php/php.ini
+      - ./${PROJECT_FOLDER}:/var/www
     healthcheck:
       test: "curl --fail nginx-balancer/fpm-ping || exit 1"
       interval: 5s
@@ -168,8 +166,55 @@ services:
     labels:
       com.example.description: "PHP fpm server"
 
+  php-composer:
+    container_name: composer-${CONTAINER_PREFIX_NAME}
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile.composer
+      args:
+        PHPVERSION: ${PHPVERSION}
+        USERUID: ${UID}
+        USERGID: ${GID}
+        USERNAME: ${USER}
+    user: $UID:$GID
+    working_dir: /var/www/
+    networks:
+      - docker_private
+    links:
+      - mariadb-server
+      - redis-cache
+      - redis-queue
+    volumes:
+      - ./${PROJECT_FOLDER}:/var/www
+    labels:
+      com.example.description: "PHP composer container"
+
+  php-supervisord:
+    container_name: supervisord-${CONTAINER_PREFIX_NAME}
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile.supervisord
+      args:
+        INSTALLSUPERVISORD: true
+        USERUID: ${UID}
+        USERGID: ${GID}
+        USERNAME: ${USER}
+    working_dir: /var/www/
+    ports:
+      - '9001:9001'
+    networks:
+      - docker_private
+    links:
+      - mariadb-server
+      - redis-cache
+      - redis-queue
+    volumes:
+      - ./${PROJECT_FOLDER}:/var/www
+    labels:
+      com.example.description: "PHP composer container"
+
   redis-cache:
-    container_name: redis-cache
+    container_name: redis-cache-${CONTAINER_PREFIX_NAME}
     image: redis:6.2-alpine
     restart: always
     command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
@@ -192,7 +237,7 @@ services:
       - redis-cache:/data
 
   redis-queue:
-    container_name: redis-queue
+    container_name: redis-queue-${CONTAINER_PREFIX_NAME}
     image: redis:6.2-alpine
     restart: always
     command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
@@ -219,6 +264,8 @@ services:
     volumes:
       - ./Docker/ssl/:/etc/certbot/:rw
       - ./Docker/ssl/conf/:/etc/letsencrypt/:rw
+    networks:
+      - docker_private
     labels:
       com.example.description: "Generate a SSL cert for your domain"
 
