@@ -1,12 +1,75 @@
-FROM nginx:1.23.3
+ARG NGINX_VERSION=1.19.0
+
+FROM nginx:${NGINX_VERSION}
 
 ARG DOMAIN=localhost
+ARG SERVER_HOST=localhost
+ARG SERVER_FPM=php-fpm
+ARG SERVER_ROOT=/var/www/public
+
+ARG WEB_SERVERS=3
+ARG API_SERVERS=1
+
+ARG NGINX_ENV=local
+
 ENV DOMAIN $DOMAIN
+
+ENV SERVER_HOST $DOMAIN
+ENV SERVER_FPM  $SERVER_FPM
+ENV SERVER_ROOT $SERVER_ROOT
+ENV WEB_SERVERS $WEB_SERVERS
+ENV API_SERVERS $API_SERVERS
+ENV NGINX_ENV $NGINX_ENV
 
 RUN mkdir /etc/nginx/ssl
 RUN mkdir /etc/nginx/ssl/live
 RUN mkdir /etc/nginx/ssl/live/$DOMAIN
 
-RUN openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes -subj "/CN=$DOMAIN/C=PT/L=Faro" \
+RUN openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes -subj "/C=PT/ST=FA/L=Faro/O=Companyname/OU=SoftWareName/CN=$DOMAIN/emailAddress=youremail@example.com" \
   -keyout /etc/nginx/ssl/live/$DOMAIN/privkey.pem \
   -out /etc/nginx/ssl/live/$DOMAIN/fullchain.pem
+
+RUN openssl dhparam -out /etc/nginx/ssl/dhparam.pem 2048
+
+COPY ./nginx/nginx.conf /tmp/nginx.conf
+COPY ./nginx/nginx.local.conf /tmp/nginx.local.conf
+COPY ./nginx/snippets /etc/nginx/snippets
+COPY ./nginx/default.conf /etc/nginx/templates/default.template
+
+
+RUN touch /etc/nginx/snippets/web-servers-upstream.conf && \
+  touch /etc/nginx/snippets/api-servers-upstream.conf && \
+  touch touch /etc/nginx/snippets/ssl.conf
+
+# Construa a configuração do upstream dinamicamente
+
+ENV UPSTREAM_CONFIGS="max_fails=5 fail_timeout=30s"
+
+RUN echo "server ${SERVER_FPM}-1:9000 ${UPSTREAM_CONFIGS} ;" >> /etc/nginx/snippets/web-servers-upstream.conf;
+RUN echo "server ${SERVER_FPM}-$((WEB_SERVERS + 1)):9001 ${UPSTREAM_CONFIGS} ;" >> /etc/nginx/snippets/api-servers-upstream.conf;
+
+RUN for i in $(seq 2 $WEB_SERVERS); do \
+  echo "server ${SERVER_FPM}-${i}:9000 ${UPSTREAM_CONFIGS} ;" >> /etc/nginx/snippets/web-servers-upstream.conf; \
+  done
+
+RUN for i in $(seq $(expr $WEB_SERVERS + 2) $(expr $WEB_SERVERS + $API_SERVERS)); do \
+  echo "server ${SERVER_FPM}-${i}:9001 ${UPSTREAM_CONFIGS} ;" >> /etc/nginx/snippets/api-servers-upstream.conf; \
+  done
+
+
+RUN \
+  if [ "${NGINX_ENV}" = "local" ]; then \
+  echo "ssl_certificate /etc/nginx/ssl/live/$DOMAIN/fullchain.pem;" >> /etc/nginx/snippets/ssl.conf;  \
+  echo "ssl_certificate_key /etc/nginx/ssl/live/$DOMAIN/privkey.pem;" >> /etc/nginx/snippets/ssl.conf; \
+  mv /tmp/nginx.local.conf /etc/nginx/nginx.conf; \
+  else \
+  echo "ssl_certificate /usr/local/psa/var/certificates/scfyLe1PO;" >> /etc/nginx/snippets/ssl.conf;  \
+  echo "ssl_certificate_key /usr/local/psa/var/certificates/scfyLe1PO;" >> /etc/nginx/snippets/ssl.conf; \
+  mv /tmp/nginx.conf /etc/nginx/nginx.conf; \
+  fi
+
+
+RUN envsubst '$$SERVER_HOST $$SERVER_FPM $$SERVER_ROOT $$WEB_SERVERS $$API_SERVERS'< /etc/nginx/templates/default.template > /etc/nginx/conf.d/default.conf
+RUN rm -rf /etc/nginx/conf.d/default
+
+CMD ["nginx", "-g", "daemon off;"]

@@ -1,0 +1,21 @@
+ARG REDIS_VERSION=7.0.11
+FROM redis:${REDIS_VERSION}
+
+ARG REDIS_PASSWORD=root
+ARG REDIS_TABLE=0
+
+ENV REDIS_PASSWORD ${REDIS_PASSWORD}
+ENV REDIS_TABLE ${REDIS_TABLE}
+
+RUN echo "vm.overcommit_memory=1" >> /etc/sysctl.conf
+RUN echo 'vm.swappiness=0' >> /etc/sysctl.conf
+RUN echo 'vm.ipv4.tcp_sack=1' >> /etc/sysctl.conf
+RUN echo 'vm.ipv4.tcp_timestamps=1' >> /etc/sysctl.conf
+RUN echo 'vm.ipv4.tcp_window_scaling=1' >> /etc/sysctl.conf
+RUN echo 'vm.ipv4.tcp_congestion_control=1' >> /etc/sysctl.conf
+RUN echo 'vm.ipv4.tcp_syncookies=1' >> /etc/sysctl.conf
+RUN echo 'vm.ipv4.tcp_tw_recycle=1' >> /etc/sysctl.conf
+
+COPY ./Docker/redis/redis.conf /usr/local/etc/redis/redis.conf
+
+CMD ["sh", "-c" , "exec redis-server /usr/local/etc/redis/redis.conf --requirepass \"${REDIS_PASSWORD}\" "]

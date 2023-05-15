@@ -37,16 +37,18 @@ services:
       context: .
       dockerfile: Docker/Dockerfile.nginx
       args:
-        DOMAIN: ${PROJECT_DOMAIN}
+          DOMAIN: ${PROJECT_DOMAIN}
+          NGINX_VERSION: ${NGINX_VERSION}
+          SERVER_FPM: ${COMPOSE_PROJECT_NAME}-php-fpm
+          SERVER_ROOT: /var/www/public
+          WEB_SERVERS: 6 #### MINIMUM 1
+          API_SERVERS: 2 #### MINIMUM 1
+          NGINX_ENV: local
+          NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
     container_name: nginx-${CONTAINER_PREFIX_NAME}
     restart: always
     dns: ${DNS}
     environment:
-      NGINX_ENVSUBST_OUTPUT_DIR: /etc/nginx
-      DOMAIN: ${PROJECT_DOMAIN}
-      SERVER_FPM: ${COMPOSE_PROJECT_NAME}-php-fpm
-      SERVER_FPM_PORT: 9000
-      SERVER_ROOT: /var/www/public
     networks:
       docker_private:
         ipv4_address: ${IP_PREFIX}.10
@@ -56,9 +58,6 @@ services:
     command: /bin/sh -c "envsubst '$$DOMAIN $$SERVER_FPM $$SERVER_FPM_PORT $$SERVER_ROOT' <  /etc/nginx/templates/default.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
     volumes:
       - ./App:/var/www
-      - ./Docker/nginx/default.conf:/etc/nginx/templates/default.template
-      - ./Docker/nginx/nginx.conf:/etc/nginx/nginx.conf
-      - ./Docker/nginx/snipets/:/etc/nginx/conf.d/snipets/
       - ./Docker/Logs/nginx:/var/log/nginx
       - ./Docker/ssl/:/etc/certbot/:ro
       # - ./Docker/ssl/conf/:/etc/nginx/ssl/:ro
@@ -215,9 +214,16 @@ services:
 
   redis-cache:
     container_name: redis-cache-${CONTAINER_PREFIX_NAME}
-    image: redis:6.2-alpine
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile.redis
+    deploy:
+      restart_policy:
+          condition: on-failure
+          delay: 5s
+          max_attempts: 3
+          window: 120s
     restart: always
-    command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
     ports:
       - '6379'
     dns: ${DNS}
@@ -238,7 +244,15 @@ services:
 
   redis-queue:
     container_name: redis-queue-${CONTAINER_PREFIX_NAME}
-    image: redis:6.2-alpine
+    build:
+      context: .
+      dockerfile: Docker/Dockerfile.redis
+    deploy:
+      restart_policy:
+          condition: on-failure
+          delay: 5s
+          max_attempts: 3
+          window: 120s
     restart: always
     command: redis-server --save 20 1 --loglevel warning --requirepass ${REDIS_PASSWORD}
     ports:
